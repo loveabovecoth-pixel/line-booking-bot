@@ -8,6 +8,10 @@ const { google } = require('googleapis');
 const app = express();
 app.use(bodyParser.json());
 
+app.get('/', (req, res) => {
+  res.send('LINE Booking Bot is running');
+});
+
 // ===== CONFIG =====
 const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
