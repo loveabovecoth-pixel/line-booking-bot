@@ -1,12 +1,11 @@
 require('dotenv').config();
 
 const express = require('express');
-const bodyParser = require('body-parser');
 const axios = require('axios');
 const { google } = require('googleapis');
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('LINE Booking Bot is running');
@@ -17,8 +16,10 @@ const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = 'Sheet1';
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
+const PORT = process.env.PORT || 3000;
 
-let pendingBooking = null;
+// pending แยกตาม user
+let pendingBookings = {};
 
 // ===== GOOGLE AUTH =====
 const auth = new google.auth.GoogleAuth({
@@ -34,6 +35,8 @@ const calendar = google.calendar({ version: 'v3', auth });
 
 // ===== SAVE TO SHEET =====
 async function saveToSheet(userId, data) {
+  console.log("Saving to sheet...");
+
   const values = [[
     new Date().toLocaleString('th-TH'),
     userId,
@@ -49,42 +52,29 @@ async function saveToSheet(userId, data) {
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values },
   });
+
+  console.log("Saved to sheet OK");
 }
 
-// ===== CREATE GOOGLE CALENDAR EVENT =====
+// ===== CREATE CALENDAR EVENT =====
 async function createCalendarEvent(data) {
-  // รองรับ dd/mm หรือ dd/mm/yyyy
-  const dateParts = data.date.split('/');
+  console.log("Creating calendar event...");
 
-  let day, month, year;
-
-  if (dateParts.length === 3) {
-    [day, month, year] = dateParts;
-  } else {
-    const now = new Date();
-    year = now.getFullYear();
-    [day, month] = dateParts;
-  }
-
+  const [day, month, year] = data.date.split('/');
   const [startTime, endTime] = data.time.split('-');
 
-  const startDateTime = new Date(
-    `${year}-${month}-${day}T${startTime}:00`
-  );
-
-  const endDateTime = new Date(
-    `${year}-${month}-${day}T${endTime}:00`
-  );
+  const start = new Date(`${year}-${month}-${day}T${startTime}:00`);
+  const end = new Date(`${year}-${month}-${day}T${endTime}:00`);
 
   const event = {
-    summary: `${data.customer}`,
-    description: 'สร้างจาก LINE Booking Bot',
+    summary: data.customer,
+    description: 'Created by LINE Booking Bot',
     start: {
-      dateTime: startDateTime.toISOString(),
+      dateTime: start.toISOString(),
       timeZone: 'Asia/Bangkok',
     },
     end: {
-      dateTime: endDateTime.toISOString(),
+      dateTime: end.toISOString(),
       timeZone: 'Asia/Bangkok',
     },
   };
@@ -94,10 +84,10 @@ async function createCalendarEvent(data) {
     resource: event,
   });
 
-  console.log('📅 Calendar event created');
+  console.log("Calendar event created");
 }
 
-// ===== REPLY TO LINE =====
+// ===== REPLY =====
 async function replyMessage(replyToken, text) {
   await axios.post(
     'https://api.line.me/v2/bot/message/reply',
@@ -116,43 +106,36 @@ async function replyMessage(replyToken, text) {
 
 // ===== WEBHOOK =====
 app.post('/webhook', async (req, res) => {
+  res.sendStatus(200); // ตอบ LINE ก่อน ป้องกัน timeout
+
   try {
-if (!req.body.events || req.body.events.length === 0) {
-      return res.sendStatus(200);
-    }
+    const event = req.body.events?.[0];
+    if (!event || !event.message) return;
 
-    if (!req.body.events || req.body.events.length === 0) {
-  return res.sendStatus(200);
-}
+    const message = event.message.text.trim();
+    const userId = event.source.userId;
 
-const event = req.body.events[0];
-
-// ถ้าไม่มี message ให้ตอบ 200 แล้วจบ
-if (!event.message || !event.message.text) {
-  return res.sendStatus(200);
-}
-
-const message = event.message.text.trim();
-const userId = event.source.userId;
-
+    console.log("Message:", message);
 
     // ===== CONFIRM =====
     if (message.toUpperCase() === 'CONFIRM') {
-      if (!pendingBooking) {
+      const booking = pendingBookings[userId];
+
+      if (!booking) {
         await replyMessage(event.replyToken, 'ยังไม่มีนัดให้ยืนยัน');
-        return res.sendStatus(200);
+        return;
       }
 
-      await saveToSheet(userId, pendingBooking);
-      await createCalendarEvent(pendingBooking);
+      await saveToSheet(userId, booking);
+      await createCalendarEvent(booking);
 
       await replyMessage(
         event.replyToken,
         '✅ บันทึกนัดและสร้าง Calendar แล้ว'
       );
 
-      pendingBooking = null;
-      return res.sendStatus(200);
+      delete pendingBookings[userId];
+      return;
     }
 
     // ===== PARSE BOOKING =====
@@ -171,7 +154,7 @@ const userId = event.source.userId;
         [day, month] = dateParts;
       }
 
-      pendingBooking = {
+      pendingBookings[userId] = {
         date: `${day}/${month}/${year}`,
         time: parts[1],
         customer: parts.slice(2).join(' '),
@@ -180,11 +163,11 @@ const userId = event.source.userId;
       await replyMessage(
         event.replyToken,
         `📅 สรุปนัดหมาย
-วันที่: ${pendingBooking.date}
-เวลา: ${pendingBooking.time}
-รายละเอียด: ${pendingBooking.customer}
+วันที่: ${pendingBookings[userId].date}
+เวลา: ${pendingBookings[userId].time}
+รายละเอียด: ${pendingBookings[userId].customer}
 
-ถ้าถูกต้อง พิมพ์ CONFIRM เพื่อบันทึกนัด`
+พิมพ์ CONFIRM เพื่อบันทึก`
       );
     } else {
       await replyMessage(
@@ -193,14 +176,12 @@ const userId = event.source.userId;
       );
     }
 
-    res.sendStatus(200);
   } catch (err) {
-    console.error('Webhook error:', err);
-    res.sendStatus(500);
+    console.error("Webhook error:", err);
   }
 });
 
 // ===== START SERVER =====
-app.listen(3000, () => {
-  console.log('🚀 LINE Booking Bot running on port 3000');
+app.listen(PORT, () => {
+  console.log('🚀 LINE Booking Bot running on port', PORT);
 });
