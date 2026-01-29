@@ -117,9 +117,24 @@ async function replyMessage(replyToken, text) {
 // ===== WEBHOOK =====
 app.post('/webhook', async (req, res) => {
   try {
-    const event = req.body.events[0];
-    const message = event.message.text.trim();
-    const userId = event.source.userId;
+if (!req.body.events || req.body.events.length === 0) {
+      return res.sendStatus(200);
+    }
+
+    if (!req.body.events || req.body.events.length === 0) {
+  return res.sendStatus(200);
+}
+
+const event = req.body.events[0];
+
+// ถ้าไม่มี message ให้ตอบ 200 แล้วจบ
+if (!event.message || !event.message.text) {
+  return res.sendStatus(200);
+}
+
+const message = event.message.text.trim();
+const userId = event.source.userId;
+
 
     // ===== CONFIRM =====
     if (message.toUpperCase() === 'CONFIRM') {
