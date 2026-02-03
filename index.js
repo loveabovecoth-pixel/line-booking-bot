@@ -58,23 +58,22 @@ async function saveToSheet(userId, data) {
 
 // ===== CREATE CALENDAR EVENT =====
 async function createCalendarEvent(data) {
-  console.log("Creating calendar event...");
-
+  // รองรับ dd/mm/yyyy
   const [day, month, year] = data.date.split('/');
   const [startTime, endTime] = data.time.split('-');
 
-  const start = new Date(`${year}-${month}-${day}T${startTime}:00`);
-  const end = new Date(`${year}-${month}-${day}T${endTime}:00`);
+  const startDateTime = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${startTime}:00`;
+  const endDateTime = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${endTime}:00`;
 
   const event = {
     summary: data.customer,
     description: 'Created by LINE Booking Bot',
     start: {
-      dateTime: start.toISOString(),
+      dateTime: startDateTime,
       timeZone: 'Asia/Bangkok',
     },
     end: {
-      dateTime: end.toISOString(),
+      dateTime: endDateTime,
       timeZone: 'Asia/Bangkok',
     },
   };
