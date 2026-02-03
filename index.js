@@ -58,23 +58,25 @@ async function saveToSheet(userId, data) {
 
 // ===== CREATE CALENDAR EVENT =====
 async function createCalendarEvent(data) {
-  // รองรับ dd/mm/yyyy
   const [day, month, year] = data.date.split('/');
   const [startTime, endTime] = data.time.split('-');
 
-  const startDateTime = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${startTime}:00`;
-  const endDateTime = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${endTime}:00`;
+  const startDateTime = new Date(
+    `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${startTime}:00+07:00`
+  );
+
+  const endDateTime = new Date(
+    `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${endTime}:00+07:00`
+  );
 
   const event = {
     summary: data.customer,
-    description: 'Created by LINE Booking Bot',
+    description: 'สร้างจาก LINE Booking Bot',
     start: {
-      dateTime: startDateTime,
-      timeZone: 'Asia/Bangkok',
+      dateTime: startDateTime.toISOString(),
     },
     end: {
-      dateTime: endDateTime,
-      timeZone: 'Asia/Bangkok',
+      dateTime: endDateTime.toISOString(),
     },
   };
 
@@ -83,7 +85,7 @@ async function createCalendarEvent(data) {
     resource: event,
   });
 
-  console.log("Calendar event created");
+  console.log('📅 Calendar event created (timezone fixed)');
 }
 
 // ===== REPLY =====
